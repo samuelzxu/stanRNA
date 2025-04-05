@@ -1,0 +1,6 @@
+ribnet_wts/
+zips/
+Figures/
+data/
+*__pycache__
+*.zip
