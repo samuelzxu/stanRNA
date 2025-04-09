@@ -8,3 +8,4 @@ source rna_env/bin/activate
 uv pip install -r requirements.txt
 huggingface-cli login
 wandb login
+huggingface-cli download --repo-type dataset samitizerxu/rna_folding_data --local-dir ./zips/
