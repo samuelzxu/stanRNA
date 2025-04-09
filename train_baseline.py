@@ -1,3 +1,4 @@
+
 import pandas as pd
 import torch
 import matplotlib.pyplot as plt
@@ -7,7 +8,7 @@ import random
 import os
 import pickle
 from tqdm import tqdm
-import wandb
+from constants import KAGGLE_DATA_PATH, KAGGLE_CIF_PATH, RIBNET_MODULES_PATH, RIBNET_WEIGHTS_PATH
 #set seed for everything
 torch.manual_seed(0)
 np.random.seed(0)
@@ -18,32 +19,26 @@ config = {
     "cutoff_date": "2020-01-01",
     "test_cutoff_date": "2022-05-01",
     "max_len": 384,
-    "batch_size": 16,
+    "batch_size": 1,
     "learning_rate": 1e-4,
     "weight_decay": 0.0,
     "mixed_precision": "bf16",
-    "model_config_path": "ribnet/configs/pairwise.yaml",  # Adjust path as needed
+    "model_config_path": os.path.join(RIBNET_MODULES_PATH, 'configs','pairwise.yaml'),  # Adjust path as needed
     "epochs": 10,
     "cos_epoch": 5,
     "loss_power_scale": 1.0,
     "max_cycles": 1,
     "grad_clip": 0.1,
-    "gradient_accumulation_steps": 8,
+    "gradient_accumulation_steps": 1,
     "d_clamp": 30,
     "max_len_filter": 9999999,
     "min_len_filter": 10, 
     "structural_violation_epoch": 50,
     "balance_weight": False,
 }
-# Initialize wandb
-wandb.init(
-    project="stanRNA",
-    config=config
-)
 # Get data and do some data processing¶
 
 # Load data
-from constants import KAGGLE_DATA_PATH, KAGGLE_CIF_PATH
 train_sequences=pd.read_csv(f"{KAGGLE_DATA_PATH}/train_sequences.csv")
 train_labels=pd.read_csv(f"{KAGGLE_DATA_PATH}/train_labels.csv")
 train_labels["pdb_id"] = train_labels["ID"].apply(lambda x: x.split("_")[0]+'_'+x.split("_")[1])
@@ -92,8 +87,8 @@ data={
       "all_sequences": train_sequences['all_sequences'].to_list(),
       "xyz": all_xyz
 }
-# Split train data into train/val/test¶
-
+# # Split train data into train/val/test¶
+# We will simply do a temporal split, because that's how testing is done in structural biology in general (in actual blind tests)
 # Split data into train and test
 all_index = np.arange(len(data['sequence']))
 cutoff_date = pd.Timestamp(config['cutoff_date'])
@@ -146,10 +141,49 @@ class RNA3D_Dataset(Dataset):
 train_dataset=RNA3D_Dataset(train_index,data)
 val_dataset=RNA3D_Dataset(test_index,data)
 
-train_loader=DataLoader(train_dataset,batch_size=16,shuffle=True)
-val_loader=DataLoader(val_dataset,batch_size=16,shuffle=False)
+import plotly.graph_objects as go
+import numpy as np
 
-# Get RibonanzaNet¶
+
+
+# Example: Generate an Nx3 matrix
+xyz = train_dataset[200]['xyz']  # Replace this with your actual Nx3 data
+N = len(xyz)
+
+
+for _ in range(2): #plot twice because it doesnt show up on first try for some reason
+    # Extract columns
+    x, y, z = xyz[:, 0], xyz[:, 1], xyz[:, 2]
+    
+    # Create the 3D scatter plot
+    fig = go.Figure(data=[go.Scatter3d(
+        x=x, y=y, z=z,
+        mode='markers',
+        marker=dict(
+            size=5,
+            color=z,  # Coloring based on z-value
+            colorscale='Viridis',  # Choose a colorscale
+            opacity=0.8
+        )
+    )])
+    
+    # Customize layout
+    fig.update_layout(
+        scene=dict(
+            xaxis_title="X",
+            yaxis_title="Y",
+            zaxis_title="Z"
+        ),
+        title="3D Scatter Plot"
+    )
+
+fig.show()
+    
+train_loader=DataLoader(train_dataset,batch_size=1,shuffle=True)
+val_loader=DataLoader(val_dataset,batch_size=1,shuffle=False)
+
+# # Get RibonanzaNet¶
+# We will add a linear layer to predict xyz of C1' atoms
 import sys
 from constants import RIBNET_MODULES_PATH, RIBNET_WEIGHTS_PATH
 sys.path.append(RIBNET_MODULES_PATH)
@@ -221,8 +255,8 @@ class SimpleStructureModule(nn.Module):
         src2 = self.linear2(self.dropout(self.activation(self.linear1(src))))
         src = src + self.dropout2(src2)
         src = self.norm2(src)
-        # src = src + self.dropout3(src2)
-        # src = self.norm3(src)
+        src = src + self.dropout3(src2)
+        src = self.norm3(src)
 
         return src
 
@@ -275,6 +309,7 @@ class finetuned_RibonanzaNet(RibonanzaNet):
         
         xyzs=[]
         xyz=torch.zeros(sequence_features.shape[1],3).cuda().float()
+        #print(xyz.shape)
         #xyz=self.xyz_predictor(sequence_features)
 
         for i in range(9):
@@ -289,7 +324,8 @@ class finetuned_RibonanzaNet(RibonanzaNet):
 model=finetuned_RibonanzaNet(load_config_from_yaml("ribnet/configs/pairwise.yaml"),pretrained=True).cuda()
 
 #model(torch.ones(1,10).long().cuda())
-# Training loop¶
+# # Training loop¶
+# we will use dRMSD loss on the predicted xyz. the loss function is invariant to translations, rotations, and reflections. because dRMSD is invariant to reflections, it cannot distinguish chiral structures, so there may be better loss functions
 def calculate_distance_matrix(X,Y,epsilon=1e-4):
     return (torch.square(X[:,None]-Y[None,:])+epsilon).sum(-1).sqrt()
 
@@ -301,6 +337,8 @@ def dRMSD(pred_x,
           epsilon=1e-4,Z=10,d_clamp=None):
     pred_dm=calculate_distance_matrix(pred_x,pred_y)
     gt_dm=calculate_distance_matrix(gt_x,gt_y)
+
+
 
     mask=~torch.isnan(gt_dm)
     mask[torch.eye(mask.shape[0]).bool()]=False
@@ -466,21 +504,12 @@ for epoch in range(epochs):
         total_loss+=loss.item()
         
         tbar.set_description(f"Epoch {epoch + 1} Loss: {total_loss/(idx+1)} OOMs: {oom}")
-        
-        # Log batch metrics
-        wandb.log({
-            "train/batch_loss": loss.item()/batch_size,
-            "train/learning_rate": optimizer.param_groups[0]['lr'],
-            "train/epoch": epoch + 1,
-            "train/batch": idx + 1
-        })
 
-    # Log epoch metrics
-    wandb.log({
-        "train/epoch_loss": total_loss/len(train_loader),
-        "train/epoch": epoch + 1
-    })
 
+
+        # except Exception:
+        #     #print(Exception)
+        #     oom+=1
     tbar=tqdm(val_loader)
     model.eval()
     val_preds=[]
@@ -498,18 +527,12 @@ for epoch in range(epochs):
     val_loss=val_loss/len(tbar)
     print(f"val loss: {val_loss}")
     
-    # Log validation metrics
-    wandb.log({
-        "val/loss": val_loss,
-        "val/epoch": epoch + 1
-    })
+    
     
     if val_loss<best_val_loss:
         best_val_loss=val_loss
         best_preds=val_preds
         torch.save(model.state_dict(),'RibonanzaNet-3D.pt')
-        # Log best model
-        wandb.save('RibonanzaNet-3D.pt')
 
     # 1.053595052265986 train loss after epoch 0
 torch.save(model.state_dict(),'RibonanzaNet-3D-final.pt')
