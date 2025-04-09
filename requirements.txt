@@ -2,7 +2,8 @@ biopython
 ViennaRNA
 py3Dmol
 forgi
-
-
-
-
+huggingface-hub
+torch
+ipykernel
+ipywidgets
+wandb
