@@ -25,7 +25,7 @@ def set_seed(seed):
 
 def init_wandb(config):
     """Initialize wandb for experiment tracking"""
-    run_name = f"RNA3D_finetuned_3090_bs_1_lr_1e-4_{datetime.now().astimezone('US/Eastern').strftime('%Y%m%d_%H:%M')}"
+    run_name = f"RNA3D_finetuned_3090_bs_4_lr_1e-4_{datetime.now().astimezone().strftime('%Y%m%d_%H:%M')}"
     
     wandb.init(
         project="ribonanzanet-3d",
@@ -181,12 +181,11 @@ def create_3d_structure_plot(gt_coords, pred_coords, title):
 
 def log_structure_predictions(val_preds, epoch):
     """Log 3D visualization of first 5 RNA structure predictions"""
-    if epoch % 5 == 0 or epoch == 0:
-        for i in range(min(5, len(val_preds))):
-            gt_coords, pred_coords = val_preds[i]
-            title = f"RNA Structure #{i+1} - Epoch {epoch+1}"
-            fig = create_3d_structure_plot(gt_coords, pred_coords, title)
-            wandb.log({f"epoch_{epoch+1:03d}_structure_{i+1}": wandb.Html(fig.to_html())})
+    for i in range(min(5, len(val_preds))):
+        gt_coords, pred_coords = val_preds[i]
+        title = f"RNA Structure #{i+1} - Epoch {epoch+1}"
+        fig = create_3d_structure_plot(gt_coords, pred_coords, title)
+        wandb.log({f"epoch_{epoch+1:03d}_structure_{i+1}": wandb.Html(fig.to_html())})
 
 def train_epoch(model, train_loader, optimizer, scheduler, batch_size, grad_clip, epoch, cos_epoch):
     """Train the model for one epoch"""
@@ -316,8 +315,8 @@ def train_model():
         })
         
         # Log 3D structure visualizations
-        if epoch == 0 or (epoch + 1) % 5 == 0:
-            log_structure_predictions(val_preds, epoch)
+        if epoch == 0 or (epoch+1) % 5 == 0:
+            log_structure_predictions(val_preds, epoch+1)
         
         print(f"Epoch {epoch + 1}/{train_config['epochs']}, "
               f"Train Loss: {train_loss:.6f}, Val Loss: {val_loss:.6f}")

@@ -7,7 +7,7 @@ config = {
     "cutoff_date": "2020-01-01",
     "test_cutoff_date": "2022-05-01",
     "max_len": 384,
-    "batch_size": 1,
+    "batch_size": 4,
     "learning_rate": 1e-4,
     "weight_decay": 0.0,
     "mixed_precision": "bf16",
