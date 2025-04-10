@@ -24,7 +24,7 @@ config = {
     "weight_decay": 0.0,
     "mixed_precision": "bf16",
     "model_config_path": os.path.join(RIBNET_MODULES_PATH, 'configs','pairwise.yaml'),  # Adjust path as needed
-    "epochs": 10,
+    "epochs": 600,
     "cos_epoch": 5,
     "loss_power_scale": 1.0,
     "max_cycles": 1,

@@ -4,3 +4,5 @@ Figures/
 data/
 *__pycache__
 *.zip
+*.pt
+wandb/

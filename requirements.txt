@@ -9,3 +9,4 @@ ipywidgets
 wandb
 plotly
 matplotlib
+einops
