@@ -191,7 +191,7 @@ def log_structure_predictions(val_preds, epoch):
             gt_coords, pred_coords = val_preds[i]
             title = f"RNA Structure #{i+1} - Epoch {epoch+1}"
             fig = create_3d_structure_plot(gt_coords, pred_coords, title)
-            wandb.log({f"structure_{i+1}_epoch_{epoch+1}": wandb.Html(fig.to_html())})
+            wandb.log({f"structure_{i+1}_epoch_{epoch+1:03d}": wandb.Html(fig.to_html())})
 
 def train_epoch(model, train_loader, optimizer, scheduler, batch_size, grad_clip, epoch, cos_epoch):
     """Train the model for one epoch"""
@@ -297,7 +297,6 @@ def train_model():
     best_preds = None
     
     for epoch in range(train_config['epochs']):
-        val_loss, val_preds = validate(model, val_loader)
 
         # Train
         train_loss = train_epoch(
