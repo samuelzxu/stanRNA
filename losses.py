@@ -80,6 +80,47 @@ def align_svd_mae(input, target, Z=10):
 
     return torch.abs(aligned_input - target).mean() / Z 
 
+def align_svd(input, target):
+    """
+    Aligns the input (Nx3) to target (Nx3) using SVD-based Procrustes alignment
+    """
+    """
+    Aligns the input (Nx3) to target (Nx3) using SVD-based Procrustes alignment
+    and computes MAE loss.
+    """
+    assert input.shape == target.shape, "Input and target must have the same shape"
+
+    # Mask
+    mask = ~torch.isnan(target.sum(-1))
+    input = input[mask]
+    target = target[mask]
+    
+    # Compute centroids
+    centroid_input = input.mean(dim=0, keepdim=True)
+    centroid_target = target.mean(dim=0, keepdim=True)
+
+    # Center the points
+    input_centered = input - centroid_input.detach()
+    target_centered = target - centroid_target
+
+    # Compute covariance matrix
+    cov_matrix = input_centered.T @ target_centered
+
+    # SVD to find optimal rotation
+    U, S, Vt = torch.svd(cov_matrix)
+
+    # Compute rotation matrix
+    R = Vt @ U.T
+
+    # Ensure a proper rotation (det(R) = 1, no reflection)
+    if torch.det(R) < 0:
+        Vt[-1, :] *= -1
+        R = Vt @ U.T
+
+    # Rotate input
+    aligned_input = (input_centered @ R.T.detach()) + centroid_target.detach()
+    return aligned_input
+
 def batched_dRMAE(pred_xyz, gt_xyz, mask, epsilon=1e-4, Z=10):
     """
     Batched distance root mean absolute error loss

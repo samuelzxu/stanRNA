@@ -12,7 +12,7 @@ from datetime import datetime
 from config import config, train_config
 from data import get_data_loaders
 from models import get_model
-from losses import dRMAE, align_svd_mae, batched_dRMAE, batched_align_svd_mae, align_svd_mae
+from losses import dRMAE, align_svd_mae, batched_dRMAE, batched_align_svd_mae, align_svd
 
 def set_seed(seed):
     """Set all random seeds for reproducibility"""
@@ -25,10 +25,10 @@ def set_seed(seed):
 
 def init_wandb(config):
     """Initialize wandb for experiment tracking"""
-    run_name = f"RNA3D_finetuned_3090_600e_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    run_name = f"RNA3D_finetuned_3090_bs_1_lr_1e-4_{datetime.now().astimezone('US/Eastern').strftime('%Y%m%d_%H:%M')}"
     
     wandb.init(
-        project="RNA_Structure_Prediction",
+        project="ribonanzanet-3d",
         name=run_name,
         config={
             **config,
@@ -83,12 +83,7 @@ def create_3d_structure_plot(gt_coords, pred_coords, title):
         pred_centered = pred_valid - pred_centroid
         
         # Compute optimal rotation
-        H = pred_centered.t() @ gt_centered
-        U, S, Vt = torch.svd(H)
-        R = Vt.t() @ U.t()
-        
-        # Apply rotation to align prediction with ground truth
-        aligned_pred = (pred_centered @ R) + gt_centroid
+        aligned_pred = align_svd(pred_centered, gt_centered)
         
         # Use the aligned prediction
         pred_coords_plot = aligned_pred.numpy()
@@ -191,7 +186,7 @@ def log_structure_predictions(val_preds, epoch):
             gt_coords, pred_coords = val_preds[i]
             title = f"RNA Structure #{i+1} - Epoch {epoch+1}"
             fig = create_3d_structure_plot(gt_coords, pred_coords, title)
-            wandb.log({f"structure_{i+1}_epoch_{epoch+1:03d}": wandb.Html(fig.to_html())})
+            wandb.log({f"epoch_{epoch+1:03d}_structure_{i+1}": wandb.Html(fig.to_html())})
 
 def train_epoch(model, train_loader, optimizer, scheduler, batch_size, grad_clip, epoch, cos_epoch):
     """Train the model for one epoch"""
